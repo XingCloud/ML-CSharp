@@ -137,7 +137,7 @@ namespace Com.XingCloud.ML
         /*
          * 在本地创建文件存放服务上获得的json信息
          */ 
-        public void CreateFile(string filePath,string str)
+        private void CreateFile(string filePath,string str)
         {
             FileStream fileStream = File.Create(filePath);
             fileStream.Close();
@@ -154,7 +154,7 @@ namespace Com.XingCloud.ML
         /*
          * 读取文件
          */ 
-        public string ReadFile(string filePath)
+        private string ReadFile(string filePath)
         { 
             string sLine = "";
             if (File.Exists(filePath))
@@ -173,37 +173,67 @@ namespace Com.XingCloud.ML
         }
 
         /*
+         * 创建日志文件
+         */ 
+        private void Log(string LogStr)
+        {
+            StreamWriter sw = null;
+            try
+            {
+                LogStr = DateTime.Now.ToLocalTime().ToString()  +"\n" + LogStr;
+                sw = new StreamWriter("."+"\\"+"log.txt", true);
+                sw.WriteLine(LogStr);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                if (sw != null)
+                {
+                    sw.Close();
+                }
+            }
+        }
+        /*
          *ML初始化。需要先登陆行云多语言管理系统创建翻译服务 http://i.xingcloud.com/service
          *serviceName:服务名字
          *apiKey：服务apikey
          *sourceLang：原始语言
          *targetLang ：目标语言
          *autoUpdateFile ：是否更新本地文件
-         *autoAddString ：时候自动添加新词
+         *autoAddTrans ：时候自动添加新词
          */
         public void Init(string serviceName, string apiKey, 
                          string sourceLang, string targetLang, 
                          bool autoUpdateFile,bool autoAddTrans)
         {
-            if (sourceLang.Equals(targetLang))
+            try
             {
-                LangSame = true;
-                return;
-            }
+                if (sourceLang.Equals(targetLang))
+                {
+                    LangSame = true;
+                    return;
+                }
 
-            ApiKey = apiKey;
-            AutoAddTrans = autoAddTrans;
-            LangSame = false;
-            LocalXmlPath = "." + "\\" + serviceName + "_" + targetLang + ".json";
-            ServiceName = serviceName;
-            if (autoUpdateFile)
-            {
-                string RequestAddress = GetRequestAddress(serviceName, targetLang, apiKey);
-                CreateFile(LocalXmlPath, GetJson(RequestAddress));
+                ApiKey = apiKey;
+                AutoAddTrans = autoAddTrans;
+                LangSame = false;
+                LocalXmlPath = "." + "\\" + serviceName + "_" + targetLang + ".json";
+                ServiceName = serviceName;
+                if (autoUpdateFile)
+                {
+                    string RequestAddress = GetRequestAddress(serviceName, targetLang, apiKey);
+                    CreateFile(LocalXmlPath, GetJson(RequestAddress));
+                }
+                string words = ReadFile(LocalXmlPath);
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                json = (Dictionary<string, object>)serializer.DeserializeObject(words);
             }
-            string words = ReadFile(LocalXmlPath);
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
-            json = (Dictionary<string, object>)serializer.DeserializeObject(words);         
+            catch (Exception e)
+            {
+                Log(e.ToString());
+            }
         }
 
         /*
