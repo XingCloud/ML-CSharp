@@ -1,12 +1,8 @@
 ML C# SDK
 =============
 
-初始化：init()
+声明ML对象
 --------------
-
- public void Init(string serviceName, string apiKey, string sourceLang, string targetLang, bool autoUpdateFile,bool autoAddTrans)
-
-通过该方法初始化ML。初始化后即可通过ML.trans()翻译词句。
 
 #### 参数类型
 
@@ -15,21 +11,16 @@ ML C# SDK
 * sourceLang: String, 原始语言, 如"cn"
 * targetLang: String, 目标语言, 如"en", 如果与原始语言相同, 则不翻译直接原文返回
 * autoUpdateFile: Boolean, 是否更新本地缓存文件
-* autoAddTrans: Boolean, 是否自动添加未翻译词句到多语言服务器, 默认为true
-
-#### 返回值
-
-N/A
+* bool onLine：是否为线上，如果为false的话则会去读取服务上xc_words.json中的数据，并插入到本地数据库中。
 
 #### 代码示例
 
 	{code}
-	// 在应用的主类初始化函数中加入下面这行代码，如果与原始语言相同，则不翻译直接原文返回
-        ml.Init("guomeng", "4f08eef37ce7ca30b5751f8531bea0dd", "cn", "en", true, true)
+		ML ml = new ML("sdktest", "d867078150e2ca422539ba1482eb01a6","cn","en",true);
 	{code}
 
 
-翻译词句：trans()
+翻译词句：Trans()//人工翻译
 -----------------
 
 public string trans(string source) 
@@ -48,4 +39,24 @@ String, 翻译好的词句, 如 "Apple"
 
 	{code}
  	 ml.trans("苹果")	
+	{code}
+翻译词句：Translate()//机器翻译
+-----------------
+
+public string Translate(string source) 
+
+通过该方法直接翻译词句。
+
+#### 参数类型
+
+* source: String, 需要翻译的词句, 如 "江山"
+
+#### 返回值
+
+String, 翻译好的词句, 如 "Country"
+
+#### 代码示例
+
+	{code}
+ 	 ml.translate("江山")	
 	{code}
