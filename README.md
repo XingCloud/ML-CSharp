@@ -4,16 +4,12 @@ ML C# SDK
 添加app.config文件
 --------------
 
-在configuration节点下添加
+在configuration节点下修改相应的数据库信息。
 
-	{code}
-		  \<appSettings\><br>
-  \<add key="connString" value="Server=10.1.4.235;Database=xingcloud; User ID=sa;Password=guomeng2012XINGCLOUD" /\><br>
-  \</appSettings\><br>	
-	{code}
+<appSettings>
+add key="connString" value="Server=10.1.4.235;Database=xingcloud; User ID=sa;Password=guomeng2012XINGCLOUD" 
+</appSettings>
 
-
-修改相应的数据库信息。
 
 声明ML对象
 --------------
@@ -25,13 +21,11 @@ ML C# SDK
 * sourceLang: String, 原始语言, 如"cn"
 * targetLang: String, 目标语言, 如"en", 如果与原始语言相同, 则不翻译直接原文返回
 * autoUpdateFile: Boolean, 是否更新本地缓存文件
-* bool onLine：是否为线上，如果为false的话则会去读取服务上xc_words.json中的数据，并插入到本地数据库中。
+* bool onLine: 是否为线上，如果为false的话则会去读取服务上xc_words.json中的数据，并插入到本地数据库中。
 
 #### 代码示例
 
-	{code}
-		ML ml = new ML("sdktest", "d867078150e2ca422539ba1482eb01a6","cn","en",true);
-	{code}
+	ML ml = new ML("sdktest", "d867078150e2ca422539ba1482eb01a6","cn","en",true);
 
 
 翻译词句（人工翻译）：Trans()
@@ -51,9 +45,8 @@ String, 翻译好的词句, 如 "Apple"
 
 #### 代码示例
 
-	{code}
  	 ml.trans("苹果")	
-	{code}
+
 翻译词句（机器翻译）：Translate()
 -----------------
 
@@ -71,6 +64,4 @@ String, 翻译好的词句, 如 "Country"
 
 #### 代码示例
 
-	{code}
  	 ml.translate("江山")	
-	{code}
