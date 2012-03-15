@@ -5,10 +5,9 @@ ML C# SDK
 --------------
 
 在configuration节点下添加 
-{code}
-\<appSettings'>'
-add key="connString" value="Server=10.1.4.235;Database=xingcloud; User ID=sa;Password=guomeng2012XINGCLOUD" /
-/appSettings
+{code}\<appSettings\>
+\<add key="connString" value="Server=10.1.4.235;Database=xingcloud; User ID=sa;Password=guomeng2012XINGCLOUD" \/\>
+\<\/appSettings\>
 {code}
 修改相应的数据库信息。
 
