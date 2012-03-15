@@ -4,12 +4,11 @@ ML C# SDK
 添加app.config文件
 --------------
 
-在configuration节点下修改相应的数据库信息。
-
+在configuration节点下添加
   \<appSettings\><br>
   \<add key="connString" value="Server=10.1.4.235;Database=xingcloud; User ID=sa;Password=guomeng2012XINGCLOUD" /\><br>
   \</appSettings\><br>	
-
+修改相应的数据库信息。
 
 声明ML对象
 --------------
