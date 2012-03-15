@@ -20,7 +20,7 @@ ML C# SDK
 	{code}
 
 
-翻译词句：Trans()//人工翻译
+翻译词句（人工翻译）：Trans()
 -----------------
 
 public string trans(string source) 
@@ -40,7 +40,7 @@ String, 翻译好的词句, 如 "Apple"
 	{code}
  	 ml.trans("苹果")	
 	{code}
-翻译词句：Translate()//机器翻译
+翻译词句（机器翻译）：Translate()
 -----------------
 
 public string Translate(string source) 
