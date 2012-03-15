@@ -2,30 +2,56 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Web.Script.Serialization;
+using System.Web.Security;
+using System.Net;
 using System.Collections;
 using System.Web;
-using System.Net;
 using System.IO;
-using System.Web.Script.Serialization;
+using System.Data.SqlClient;
 using System.Data;
-using System.Xml;
 using System.Configuration;
-using System.Web.Security;
 
-namespace Com.XingCloud.ML 
+namespace Com.XingCloud.ML
 {
     public class ML
     {
-        Hashtable WordTable = new Hashtable();
-        DataSet dataset = new DataSet();
-        private string LocalXmlPath;
-        private Dictionary<string, object> json;
-        private object target;
-        private bool AutoAddTrans;
-        private bool LangSame;
+        SqlConnection conn;
+        private int partition = 100;
+        string DBtitle = "language";
         private string ServiceName;
         private string ApiKey;
-
+        private string SourceLang;
+        private string TargetLang;
+        private bool OnLine;
+        public ML(string serviceName, string apiKey, string sourceLang, string targetLang,bool onLine)
+        {
+            this.ServiceName = serviceName;
+            this.ApiKey = apiKey;
+            this.SourceLang = sourceLang;
+            this.TargetLang = targetLang;
+            this.OnLine = onLine;
+            this.conn = new SqlConnection();
+            if (this.conn.State == ConnectionState.Open)
+            {
+                this.conn.Close();
+            }
+            string connectionString = ConfigurationManager.AppSettings["connString"];
+            this.conn.ConnectionString = connectionString;
+            this.conn.Open(); 
+           for(int n=0;n<partition;n++)
+           {
+                string sql = " if not exists (select * from sysobjects where name='language" + n + "' and xtype='U') CREATE TABLE language" + n + "  ( md5 char(32) NOT NULL PRIMARY KEY, source varchar(2000) NOT NULL, target varchar(2000) NOT NULL )";
+                SqlCommand comd = new SqlCommand(sql, this.conn);
+                comd.ExecuteNonQuery();
+            }
+           if (!onLine)
+           {
+               updateXCWords();
+           }
+    }
+        JavaScriptSerializer serializer = new JavaScriptSerializer();
+        Dictionary<string, object> wordsHash;
         private class FileInfos
         {
             public DataEntity data = new DataEntity();
@@ -44,13 +70,12 @@ namespace Com.XingCloud.ML
             public int length { get; set; }
             public string md5 { get; set; }
         }
-
         /*
          * 以POST的方式发送请求
          * url：请求地址
          * parameters：用来存放请求的参数
          */
-        private String SendRequest(string url, Hashtable parameters)
+        private string SendRequest(string url, Hashtable parameters)
         {
             Encoding encoding = Encoding.GetEncoding("utf-8");
             string param = "";
@@ -80,25 +105,43 @@ namespace Com.XingCloud.ML
 
         /*
          * 以GET方式发送请求
-         */ 
-        private String SendRequestGet(string timestamp, string hash,
+         */
+        private string GetFileInfo(string timestamp, string hash,
                                       string url, string serviceName,
                                       string locale, string filepath)
         {
             System.Net.WebClient webClient = new System.Net.WebClient();
-            byte[] by = webClient.DownloadData(url + "?timestamp=" + timestamp + "&hash=" + hash 
+            byte[] by = webClient.DownloadData(url + "?timestamp=" + timestamp + "&hash=" + hash
                                         + "&service_name=" + serviceName + "&locale=" + locale
                                         + "&file_path=" + filepath);
             string FileInfo = Encoding.UTF8.GetString(by);
             return FileInfo;
         }
-
         /*
-         *从线上获得json信息
-         */
-        private String GetJson(string url)
+         * 访问file/info，从返回值中获取xc_words.json的地址
+         */ 
+        private string GetRequestAddress(string serviceName, string tarLang, string apiKey)
         {
-            string json = string.Empty;
+            DateTime StartTime = TimeZone.CurrentTimeZone.ToLocalTime(new System.DateTime(1970, 1, 1, 0, 0, 0, 0));
+            DateTime NowTime = DateTime.Now;
+            long UnixTime = (long)Math.Round((NowTime - StartTime).TotalMilliseconds, MidpointRounding.AwayFromZero);
+            string TimeStamp = UnixTime.ToString();
+            string pwd = TimeStamp + apiKey;
+            string Hash = FormsAuthentication.HashPasswordForStoringInConfigFile(pwd, "MD5").ToLower();
+            string FileinfoUrl = "http://i.xingcloud.com/api/v1/file/info";
+            string Info = GetFileInfo(TimeStamp, Hash, FileinfoUrl, serviceName, tarLang, "xc_words.json");
+            JavaScriptSerializer js = new JavaScriptSerializer();
+            FileInfos Fileinfo = js.Deserialize<FileInfos>(Info);
+            string RequestAddress = Fileinfo.data.request_address;
+            return RequestAddress;
+        }
+        /*
+         *访问文件地址，并获取文件内容
+         */
+        private string GetJson(string url)
+        {
+            StringBuilder stringBuilder=new StringBuilder() ;
+            string rLine = string.Empty;
             HttpWebRequest httpWebRequest = System.Net.WebRequest.Create(url) as HttpWebRequest;
             httpWebRequest.KeepAlive = false;
             httpWebRequest.AllowAutoRedirect = false;
@@ -111,188 +154,163 @@ namespace Com.XingCloud.ML
                 {
                     System.IO.Stream strem = res.GetResponseStream();
                     System.IO.StreamReader r = new System.IO.StreamReader(strem);
-                    json = r.ReadToEnd();
+                    while(rLine!=null){
+                        rLine = r.ReadLine();
+                        stringBuilder.Append(rLine);
+                    }
                 }
             }
-            return json;
-        }
-
-        //访问file/info，从返回值中获取xc_words.json的地址
-        private string GetRequestAddress(string serviceName, string tarLang,string apiKey)
-        {
-            DateTime StartTime = TimeZone.CurrentTimeZone.ToLocalTime(new System.DateTime(1970, 1, 1, 0, 0, 0, 0));
-            DateTime NowTime = DateTime.Now;
-            long UnixTime = (long)Math.Round((NowTime - StartTime).TotalMilliseconds, MidpointRounding.AwayFromZero);
-            string TimeStamp = UnixTime.ToString();
-            string PWD = TimeStamp + apiKey;
-            string Hash = FormsAuthentication.HashPasswordForStoringInConfigFile(PWD, "MD5").ToLower();
-            string FileinfoUrl = "http://i.xingcloud.com/api/v1/file/info";
-            string Info = SendRequestGet(TimeStamp,Hash ,FileinfoUrl, serviceName, tarLang, "xc_words.json");
-            JavaScriptSerializer js = new JavaScriptSerializer();
-            FileInfos Fileinfo = js.Deserialize<FileInfos>(Info);
-            string RequestAddress = Fileinfo.data.request_address;
-            return RequestAddress;
+            return stringBuilder.ToString() ;
         }
 
         /*
-         * 在本地创建文件存放服务上获得的json信息
-         */ 
-        private void CreateFile(string filePath,string str)
-        {
-            FileStream fileStream = File.Create(filePath);
-            fileStream.Close();
-            FileStream fs = new FileStream(filePath, FileMode.Create);
-            //获得字节数组
-            byte[] data = new UTF8Encoding().GetBytes(str);
-            //开始写入
-            fs.Write(data, 0, data.Length);
-            //清空缓冲区、关闭流
-            fs.Flush();
-            fs.Close();
-        }
-
-        /*
-         * 读取文件
-         */ 
-        private string ReadFile(string filePath)
-        { 
-            string sLine = "";
-            if (File.Exists(filePath))
-            {
-            StreamReader objReader = new StreamReader(filePath);
-            ArrayList LineList = new ArrayList();
-            while (sLine != null)
-            {
-                sLine = objReader.ReadLine();
-                LineList.Add(sLine);
-            }
-            objReader.Close();
-            sLine = string.Join("", (string[])LineList.ToArray(typeof(string)));
-            }
-            return sLine;
-        }
-
-        /*
-         * 创建日志文件
-         */ 
-        private void Log(string LogStr)
-        {
-            StreamWriter sw = null;
-            try
-            {
-                LogStr = DateTime.Now.ToLocalTime().ToString()  +"\n" + LogStr;
-                sw = new StreamWriter("."+"\\"+"log.txt", true);
-                sw.WriteLine(LogStr);
-            }
-            catch
-            {
-            }
-            finally
-            {
-                if (sw != null)
-                {
-                    sw.Close();
-                }
-            }
-        }
-        /*
-         *ML初始化。需要先登陆行云多语言管理系统创建翻译服务 http://i.xingcloud.com/service
-         *serviceName:服务名字
-         *apiKey：服务apikey
-         *sourceLang：原始语言
-         *targetLang ：目标语言
-         *autoUpdateFile ：是否更新本地文件
-         *autoAddTrans ：时候自动添加新词
+         * 查询数据
          */
-        public void Init(string serviceName, string apiKey, 
-                         string sourceLang, string targetLang, 
-                         bool autoUpdateFile,bool autoAddTrans)
+        private string queryString(string source) 
+        {
+                int flag = 0;
+                string target = string.Empty;
+                string md = FormsAuthentication.HashPasswordForStoringInConfigFile(source, "MD5").ToLower();
+                int tableNum = Math.Abs(md.GetHashCode()) % partition;
+                string tableName = DBtitle + tableNum;
+                string sql = "select target from " + tableName + " where md5='" + md + "'";
+                DataSet objDataSet = new DataSet();
+                SqlCommand comd = new SqlCommand(sql, this.conn);
+                SqlDataReader sqlReader = comd.ExecuteReader();
+                while (sqlReader.Read())
+                {
+                    flag += 1;
+                    target= sqlReader.GetValue(0).ToString();
+                    sqlReader.Close();
+                    return target;
+                }
+                if (flag == 0)
+                {
+                    sqlReader.Close();
+                    return source;
+                }
+                return source;
+        }
+
+        /*
+         * 向数据库表中插入数据
+         */ 
+        private void insert(string tableName,
+                            string md5,
+                            string source,
+                            string target)
         {
             try
             {
-                if (sourceLang.Equals(targetLang))
-                {
-                    LangSame = true;
-                    return;
-                }
 
-                ApiKey = apiKey;
-                AutoAddTrans = autoAddTrans;
-                LangSame = false;
-                LocalXmlPath = "." + "\\" + serviceName + "_" + targetLang + ".json";
-                ServiceName = serviceName;
-                if (autoUpdateFile)
-                {
-                    string RequestAddress = GetRequestAddress(serviceName, targetLang, apiKey);
-                    CreateFile(LocalXmlPath, GetJson(RequestAddress));
-                }
-                string words = ReadFile(LocalXmlPath);
-                JavaScriptSerializer serializer = new JavaScriptSerializer();
-                json = (Dictionary<string, object>)serializer.DeserializeObject(words);
+                string sql = "if not exists (select * from " + tableName + " where md5='" + md5 + "') insert into "
+                    + tableName + " values ('" + md5 + "','" + source + "','" + target + "')";
+                SqlCommand comd = new SqlCommand(sql, this.conn);
+                comd.ExecuteNonQuery();
+            }catch(Exception e){
+                Console.WriteLine(e.ToString());
             }
-            catch (Exception e)
-            {
-                Log(e.ToString());
-            }
+
         }
-
-        /*
-         *访问服务添加新的字符串
-         */
+         /*
+          *访问Rest接口，添加字符串
+          */ 
         private void AddString(string addString)
         {
             DateTime startTime = TimeZone.CurrentTimeZone.ToLocalTime(new System.DateTime(1970, 1, 1, 0, 0, 0, 0));
             DateTime nowTime = DateTime.Now;
             long unixTime = (long)Math.Round((nowTime - startTime).TotalMilliseconds, MidpointRounding.AwayFromZero);
             string timestamp = unixTime.ToString();
-            string PWD = timestamp + ApiKey;
+            string PWD = timestamp + this.ApiKey;
             string md = FormsAuthentication.HashPasswordForStoringInConfigFile(PWD, "MD5").ToLower();
             Hashtable stringAddParameters = new Hashtable();
-            stringAddParameters.Add("service_name", ServiceName);
+            stringAddParameters.Add("service_name", this.ServiceName);
             stringAddParameters.Add("data", addString);
             stringAddParameters.Add("timestamp", timestamp);
             stringAddParameters.Add("hash", md);
             string stringAddUrl = "http://i.xingcloud.com/api/v1/string/add";
             SendRequest(stringAddUrl, stringAddParameters);
         }
-
-        /*
-         * 翻译文本
-         */ 
-        public string trans(string source) 
+           /*
+            *将服务中的xc_words文件存入数据库
+            */
+        private void updateXCWords()
         {
-            if ("".Equals(source)) 
+            string requestAddress = GetRequestAddress(this.ServiceName, this.TargetLang, this.ApiKey);
+            string json = GetJson(requestAddress);
+            wordsHash = (Dictionary<string, object>)serializer.DeserializeObject(json);
+                Dictionary<string, object>.KeyCollection keyColl = wordsHash.Keys;
+                object value;
+                foreach (string key in keyColl)
+                {
+                    wordsHash.TryGetValue(key, out value);
+                    string md = FormsAuthentication.HashPasswordForStoringInConfigFile(key, "MD5").ToLower();
+                    int tableNum = Math.Abs(md.GetHashCode()) % partition;
+                    insert(DBtitle+tableNum, md,key, value.ToString());
+                }
+        }
+        /*
+         * 调用translateAPI
+         */ 
+        private string TranslateApi(string sourceLang,
+                                    string targetLang,
+                                    string queryString)
+        {
+            DateTime startTime = TimeZone.CurrentTimeZone.ToLocalTime(new System.DateTime(1970, 1, 1, 0, 0, 0, 0));
+            DateTime nowTime = DateTime.Now;
+            long unixTime = (long)Math.Round((nowTime - startTime).TotalMilliseconds, MidpointRounding.AwayFromZero);
+            string timestamp = unixTime.ToString();
+            string pwd = timestamp + this.ApiKey;
+            string md5 = FormsAuthentication.HashPasswordForStoringInConfigFile(pwd, "MD5").ToLower();
+            string TranslateUrl = "http://i.xingcloud.com/api/v1/string/translate";
+            System.Net.WebClient webClient = new System.Net.WebClient();
+            byte[] byteArray = webClient.DownloadData(TranslateUrl + "?timestamp=" + timestamp + "&hash=" + md5
+                                        + "&service_name=" + this.ServiceName + "&source=" + sourceLang + "&target=" + targetLang
+                                        + "&query=" + queryString);
+            string QueryResult = Encoding.UTF8.GetString(byteArray);
+            return QueryResult;
+        }
+        /*
+         * 人工翻译，会将翻译的词条添加到人工管理界面
+         * source:需要翻译的词条
+         */
+        public string Trans(string source)
+        {
+            string target = queryString(source);
+            if (!this.OnLine)
             {
-                return source;
+                if (target.Equals(source))
+                {
+                    AddString(source);
+                }
             }
+            return target;
+        }
+        /*
+         *机器翻译，不会进行人工管理
+         *source：需要翻译的词条
+         */
 
-            if (LangSame)
+        public string Translate( string source  )
+        {
+            if(!this.OnLine)
             {
-                return source;
-            }
-
-            else
-            {
+                string result=string.Empty;
                 try
                 {
-                    if (json.TryGetValue(source, out target))
-                    {
-                        return (string)target;
-                    }
-                    else
-                    {
-                        //根据AutoAddTrans的值来判断是否添加词条
-                        if (AutoAddTrans)
-                        {
-                            AddString(source);
-                        }
-                        return source;
-                    }
+                 result = TranslateApi(this.SourceLang, this.TargetLang, source);
+                }catch(Exception e){
+                  Console.WriteLine(e.ToString());
                 }
-                catch {
-                    return source;
-                }
+                string md = FormsAuthentication.HashPasswordForStoringInConfigFile(source, "MD5").ToLower();
+                int tableNum = Math.Abs(md.GetHashCode()) % partition;
+                insert(DBtitle + tableNum, md, source, result);
+                return result;
+            }else
+            {
+                 return queryString(source);
             }
         }
+
     }
 }
