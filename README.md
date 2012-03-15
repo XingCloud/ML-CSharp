@@ -4,7 +4,7 @@ ML C# SDK
 添加app.config文件
 --------------
 
-在configuration节点下添加
+在configuration节点下添加<br>
   \<appSettings\><br>
   \<add key="connString" value="Server=10.1.4.235;Database=xingcloud; User ID=sa;Password=guomeng2012XINGCLOUD" /\><br>
   \</appSettings\><br>	
