@@ -23,7 +23,6 @@ namespace Com.XingCloud.ML
     public class ML
     {
         public const string APIPREFIX = "http://i.xingcloud.com/api/v1";
-        public const string SNAPSHOT = "snapshot.txt";
 
         private bool mTransType = false;
 
@@ -35,9 +34,7 @@ namespace Com.XingCloud.ML
 
         private string mTargetLang;
 
-        private int mQueueNumber = 10;
-
-        private string mCacheDir = "";
+        private bool mDebug;
 
         private Dictionary<string, Dictionary<string, string>> mTransHash = new Dictionary<string, Dictionary<string, string>>();
 
@@ -52,22 +49,17 @@ namespace Com.XingCloud.ML
         /// <param name="targetLang">翻译结果对应语言的缩写</param>
         /// <param name="cacheDir">本地缓存目录地址，默认是当前文件目录下</param>
         /// <param name="queueNumber">本地缓存队列长度，默认是10</param>
+        /// <param name="debug">debug错误日志输出</param>
         /// <returns></returns>
-        public ML(string serviceName, string apiKey, string sourceLang, string targetLang) : this(serviceName, apiKey, sourceLang, targetLang, "", 10) {}
-
-        public ML(string serviceName, string apiKey, string sourceLang, string targetLang, int queueNumber) : this(serviceName, apiKey, sourceLang, targetLang, "", queueNumber) {}
-
-        public ML(string serviceName, string apiKey, string sourceLang, string targetLang, string cacheDir) : this(serviceName, apiKey, sourceLang, targetLang, cacheDir, 10) {}
-
-        public ML(string serviceName, string apiKey, string sourceLang, string targetLang, string cacheDir, int queueNumber)
+        public ML(string serviceName, string apiKey, string sourceLang, string targetLang) : this(serviceName, apiKey, sourceLang, targetLang, false) { }
+        
+        public ML(string serviceName, string apiKey, string sourceLang, string targetLang, bool debug)
         {
             this.mServiceName = serviceName;
             this.mApiKey = apiKey;
             this.mSourceLang = sourceLang;
             this.mTargetLang = targetLang;
-            this.mCacheDir = cacheDir;
-            this.mQueueNumber = queueNumber;
-
+            this.mDebug = debug;
             if (this.mSourceLang == this.mTargetLang)
             {
                 this.mTransType = false;
@@ -75,17 +67,14 @@ namespace Com.XingCloud.ML
             else
             {
                 this.mTransType = true;
-                this.UpdateLocalCache();
             }
 
         }
 
         /// <summary>
-        /// 翻译词条接口，输入词条，返回翻译结果，如果本地缓存中没有翻译结果，则返回原词条
+        /// 人工翻译，将词条提交到多语言平台，对其可进行管理，最终可以获取精确翻译结果。
         /// </summary>
         /// <param name="words">需要翻译的词条</param>
-        /// <param name="fileName">本地缓存文件后缀名,以.json结尾,如果文件名后缀不是.json,那么会强行加以个.json后缀</param>
-        /// <param name="timelyTrans">是否是及时翻译，这种翻译及时返回翻译结果，但是不会在项目列表中记录词条，不保证翻译的精确性</param>
         /// <returns></returns>
         public string Trans(string words)
         {
@@ -94,15 +83,15 @@ namespace Com.XingCloud.ML
             return this.Trans(words, fileName, timelyTrans);
         }
 
-        public string Trans(string words, bool timelyTrans)
+        /// <summary>
+        /// 机器翻译，立刻获取翻译结果
+        /// </summary>
+        /// <param name="words">需要翻译的词条</param>
+        /// <returns></returns>
+        public string Translate(string words)
         {
             string fileName = "xc_words.json";
-            return this.Trans(words, fileName, timelyTrans);
-        }
-
-        public string Trans(string words, string fileName)
-        {
-            bool timelyTrans = false;
+            bool timelyTrans = true;
             return this.Trans(words, fileName, timelyTrans);
         }
 
@@ -131,151 +120,20 @@ namespace Com.XingCloud.ML
             }
         }
 
-        private string GetLocalCachePath(string fileName)
-        {
-            string filePath = this.mCacheDir + "\\" + this.mServiceName + "_" + this.mTargetLang + "_" + fileName;
-            filePath = filePath.Trim().Trim("\\".ToCharArray());
-            return filePath;
-        }
-
-        private string ReadLocalCache(string fileName)
-        {
-            string filePath = this.GetLocalCachePath(fileName);
-            if (!File.Exists(filePath))
-            {
-                return "";
-            }
-            StreamReader sr = new StreamReader(filePath);
-            string json = sr.ReadToEnd();
-            sr.Close();
-            return json;
-        }
-
-        private bool WriteLocalCache(string fileName, string content)
-        {
-            string filePath = this.GetLocalCachePath(fileName);
-            try
-            {
-                Stream fs = File.Open(filePath, FileMode.Create);
-                TextWriter fileWriter = new StreamWriter(fs);
-                fileWriter.Write(content);
-                fileWriter.Close();
-                fs.Close();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                ErrorLog.LogWrite(ex);
-                return false;
-            }
-        }
-
-        private bool UpdateLocalCache()
-        {
-            string snapShot = this.GetFilesInfo();
-            Dictionary<string, string> outDatedFileList = this.GetOutDatedFileList(snapShot);
-            this.BatchUpdateLocalFile(outDatedFileList);
-            return true;
-        }
-
-        private bool BatchUpdateLocalFile(Dictionary<string, string> fileList)
-        {
-            if (fileList.Count() == 0)
-                return true;
-            try
-            {
-                foreach (KeyValuePair<string, string> item in fileList)
-                {
-                    this.DownloadFile(item);
-                }
-                return true;
-            }
-            catch (Exception ex)
-            {
-                ErrorLog.LogWrite(ex);
-                return false;
-            }
-        }
-
-        private Dictionary<string, string> GetOutDatedFileList(string snapShot)
-        {
-            try
-            {
-                JavaScriptSerializer serializer = new JavaScriptSerializer();
-                Dictionary<string, object> newFileInfosHash = (Dictionary<string, object>)serializer.DeserializeObject(snapShot);
-                Dictionary<string, object> newDataHash = (Dictionary<string, object>)newFileInfosHash["data"];
-                string remotePrefix = newFileInfosHash["request_prefix"].ToString();
-
-                Dictionary<string, string> fileList = new Dictionary<string, string>();
-                string localJson = this.ReadLocalCache(SNAPSHOT);
-                if (localJson == "")
-                {
-                    foreach (KeyValuePair<string, object> item in newDataHash)
-                    {
-                        fileList.Add(this.GetRemoteFilePath(item, remotePrefix), item.Key);
-                    }
-                    this.WriteLocalCache(SNAPSHOT, snapShot);
-                    return fileList;
-                }
-                Dictionary<string, object> oldDataHash = (Dictionary<string, object>)((Dictionary<string, object>)serializer.DeserializeObject(localJson))["data"];
-
-                foreach (KeyValuePair<string, object> item in newDataHash)
-                {
-                    if (oldDataHash.ContainsKey(item.Key) && item.Value.ToString() == oldDataHash[item.Key].ToString())
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        fileList.Add(this.GetRemoteFilePath(item, remotePrefix), item.Key);
-                    }
-                }
-                this.WriteLocalCache(SNAPSHOT, snapShot);
-                return fileList;
-            }
-            catch (Exception ex)
-            {
-                ErrorLog.LogWrite(ex);
-                Dictionary<string, string> empty = new Dictionary<string, string>();
-                return empty;
-            }
-        }
-
-        private string GetRemoteFilePath(KeyValuePair<string, object> item, string remotePrefix)
-        {
-            string remotePath = remotePrefix + "/" + item.Key + "?md5=" + item.Value.ToString();
-            return remotePath;
-        }
-
-        private string GetFilesInfo()
-        { 
-            string url = APIPREFIX + "/file/snapshot";
-            string timeStamp = this.GetTimeStamp();
-            string authorizer = timeStamp + this.mApiKey;
-            string hash = FormsAuthentication.HashPasswordForStoringInConfigFile(authorizer, "MD5").ToLower();
-            Dictionary<string, string> data = new Dictionary<string, string>();
-            data.Add("service_name", this.mServiceName);
-            data.Add("timestamp", timeStamp);
-            data.Add("hash", hash);
-            data.Add("locale", this.mTargetLang);
-            string ret = this.GetRequest(url, data);
-            return ret;
-        }
-
         private string TimelyTrans(string words)
         {
             string url = APIPREFIX + "/string/translate";
             string timeStamp = this.GetTimeStamp();
             string authorizer = timeStamp + this.mApiKey;
             string hash = FormsAuthentication.HashPasswordForStoringInConfigFile(authorizer, "MD5").ToLower();
-            Dictionary<string, string> data = new Dictionary<string, string>();
-            data.Add("service_name", this.mServiceName);
-            data.Add("timestamp", timeStamp);
-            data.Add("hash", hash);
-            data.Add("source", this.mSourceLang);
-            data.Add("target", this.mTargetLang);
-            data.Add("query", words);
-            string ret = this.GetRequest(url, data);
+            Dictionary<string, string> urlParams = new Dictionary<string, string>();
+            urlParams.Add("service_name", this.mServiceName);
+            urlParams.Add("timestamp", timeStamp);
+            urlParams.Add("hash", hash);
+            urlParams.Add("source", this.mSourceLang);
+            urlParams.Add("target", this.mTargetLang);
+            urlParams.Add("query", words);
+            string ret = this.PostRequest(url, urlParams);
             return ret;
         }
 
@@ -283,8 +141,26 @@ namespace Com.XingCloud.ML
         {
             if (words.Trim() != "" && this.mTransType)
             {
-                string transWords = this.GetTransWords(words, fileName);
-                return transWords;
+                string querySet = this.GetTransWords(words, fileName);
+                if (querySet == "")
+                {
+                    return words;
+                }
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                Dictionary<string, object> transHash = (Dictionary<string, object>)serializer.DeserializeObject(querySet);
+                Dictionary<string, object> newDataHash = (Dictionary<string, object>)((Dictionary<string, object>)transHash["data"])["data"];
+                if (newDataHash.ContainsKey(words))
+                {
+                    if (newDataHash[words].ToString() == words)
+                    {
+                        this.AddString(words, fileName);
+                    }
+                    return newDataHash[words].ToString();
+                }
+                else
+                {
+                    return words;
+                }
             }
             else
             {
@@ -295,52 +171,19 @@ namespace Com.XingCloud.ML
 
         private string GetTransWords(string words, string fileName)
         {
-            if (!File.Exists(this.GetLocalCachePath(fileName)))
-            {
-                this.AddString(words, fileName);
-                return words;
-            }
-            if (!this.mTransHash.ContainsKey(fileName))           //判断是否该文件已被加载
-            {
-                if (this.mCacheQueue.Count() >= this.mQueueNumber)
-                {
-                    string outDateFileName = this.mCacheQueue.Dequeue();
-                    this.mTransHash.Remove(outDateFileName);
-                }
-                string localJson = this.ReadLocalCache(fileName);
-                if (localJson == "")
-                {
-                    this.AddString(words, fileName);
-                    return words;
-                }
-                JavaScriptSerializer serializer = new JavaScriptSerializer();
-                Dictionary<string, object> tmpWordsDic = new Dictionary<string, object>();
-                tmpWordsDic = (Dictionary<string, object>)serializer.DeserializeObject(localJson);
-                Dictionary<string, string> cacheDic = new Dictionary<string, string>();
-                cacheDic = this.DictTransform(tmpWordsDic);
-                this.mTransHash.Add(fileName, cacheDic);
-                this.mCacheQueue.Enqueue(fileName);
-            }
-            Dictionary<string, string> cache = (Dictionary<string, string>)this.mTransHash[fileName];
-            if (cache.ContainsKey(words))
-            {
-                return this.mTransHash[fileName][words];
-            }
-            else
-            {
-                this.AddString(words, fileName);
-                return words;
-            }
-        }
+            string timeStamp = this.GetTimeStamp();
+            string authorizer = timeStamp + this.mApiKey;
+            string hash = FormsAuthentication.HashPasswordForStoringInConfigFile(authorizer, "MD5").ToLower();
+            string url = APIPREFIX + "/string/get";
 
-        private Dictionary<string, string> DictTransform(Dictionary<string, object> objDic)
-        {
-            Dictionary<string, string> strDic = new Dictionary<string, string>();
-            foreach (KeyValuePair<string, object> item in objDic)
-            {
-                strDic.Add(item.Key, item.Value.ToString());
-            }
-            return strDic;
+            Dictionary<string, string> urlParams = new Dictionary<string, string>();
+            urlParams.Add("service_name", this.mServiceName);
+            urlParams.Add("query", words);
+            urlParams.Add("timestamp", timeStamp);
+            urlParams.Add("hash", hash);
+            urlParams.Add("file_path", fileName);
+            urlParams.Add("target", this.mTargetLang);
+            return this.GetRequest(url, urlParams);
         }
 
         /// <summary>
@@ -401,7 +244,10 @@ namespace Com.XingCloud.ML
             }
             catch (Exception ex)
             {
-                ErrorLog.LogWrite(ex);
+                if (this.mDebug)
+                {
+                    ErrorLog.LogWrite(ex);
+                }
                 return "";
             }
         }
@@ -440,51 +286,12 @@ namespace Com.XingCloud.ML
             }
             catch (Exception ex)
             {
-                ErrorLog.LogWrite(ex);
+                if (this.mDebug)
+                {
+                    ErrorLog.LogWrite(ex);
+                }
                 return "";
             }
-        }
-        
-        /// <summary>
-        /// 获取服务器中对应文件
-        /// </summary>
-        /// <param name="item">文件信息对:文件地址，文件名</param>
-        /// <returns></returns>
-        private bool DownloadFile(KeyValuePair<string, string> item)
-        {
-            string url = item.Key;
-            string fileName = item.Value;
-            StringBuilder stringBuilder = new StringBuilder();
-            string rLine = string.Empty;
-            try
-            {
-                HttpWebRequest httpWebRequest = System.Net.WebRequest.Create(url) as HttpWebRequest;
-                httpWebRequest.KeepAlive = false;
-                httpWebRequest.AllowAutoRedirect = false;
-                httpWebRequest.UserAgent = "Mozilla/5.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 2.0.50727)";
-                httpWebRequest.Timeout = 10000;
-                httpWebRequest.ContentType = "application/x-www-form-urlencoded;charset=utf-8";
-                using (HttpWebResponse res = (HttpWebResponse)httpWebRequest.GetResponse())
-                {
-                    if (res.StatusCode == HttpStatusCode.OK || res.StatusCode == HttpStatusCode.PartialContent)
-                    {
-                        System.IO.Stream strem = res.GetResponseStream();
-                        System.IO.StreamReader r = new System.IO.StreamReader(strem);
-                        while (rLine != null)
-                        {
-                            rLine = r.ReadLine();
-                            stringBuilder.Append(rLine);
-                        }
-                    }
-                }
-                this.WriteLocalCache(fileName, stringBuilder.ToString());
-            }
-            catch (Exception ex)
-            {
-                ErrorLog.LogWrite(ex);
-                return false;
-            }
-            return true;
         }
     }
 
